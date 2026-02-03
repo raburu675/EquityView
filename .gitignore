@@ -1,0 +1,15 @@
+# Ignore the secret keys
+.env
+
+# Ignore the virtual environment
+.venv/
+env/
+venv/
+
+# Ignore Python cache and temporary files
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Ignore local databases
+*.db
