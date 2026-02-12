@@ -37,9 +37,10 @@ def run_finance_agent(prompt: str, table_rows: list):
     {context_table}
     
     INSTRUCTIONS:
-    1. For general analysis, refer to the table.
-    2. For any math/totals, you MUST use the provided tools.
-    3. Every response MUST be exactly 4 lines of text.
+    1. If the user asks for a specific value (like profit, sales, or totals), provide a single, direct sentence answer.
+    2. Do not provide long explanations or paragraphs unless specifically asked to analyze trends.
+    3. Use your tools for all calculations to ensure accuracy.
+    4. Keep the tone professional and concise.
     """
 
     # 3. Call Gemini
