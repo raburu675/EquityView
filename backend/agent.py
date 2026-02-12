@@ -1,39 +1,58 @@
 import os
-from dataclasses import dataclass
+import pandas as pd
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
-from pydantic_ai import Agent, RunContext
 
-# 1. Load the keys
 load_dotenv()
-# Mapping your key to the one PydanticAI expects
-if not os.getenv("GOOGLE_API_KEY"):
-    os.environ["GOOGLE_API_KEY"] = os.getenv("GEMINI_API_KEY", "")
+client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
-@dataclass
-class FinancialContext:
-    data_summary: str 
-    app_structure: str 
+def run_finance_agent(prompt: str, table_rows: list):
+    # Create the DataFrame dynamically from the frontend's data
+    df = pd.DataFrame(table_rows)
+    
+    # 1. Define Tools (Calculations) using the dynamic dataframe
+    def get_total_sales() -> float:
+        return float(df["Sales"].sum())
 
-# 2. Initialize the Agent with the newest model
-analysis_agent = Agent(
-    'google-gla:gemini-2.0-flash', # Upgraded to 2.0
-    deps_type=FinancialContext,
-    # result_type=str, # Optional: Define if you want a Pydantic model back
-    system_prompt=(
-        "You are a Business Intelligence Assistant for 'Company Analytics'. "
-        "You have access to a 12-month financial dataset. "
-        "Use the provided context to answer user questions accurately. "
-        "Always refer to specific charts when relevant: "
-        "- 'Monthly Investment' (Bar Chart) "
-        "- 'Monthly Sales' (Line Chart) "
-        "- 'Profit Trajectory' (Area Chart)"
+    def get_total_investment() -> float:
+        return float(df["Investment"].sum())
+
+    def get_profit(month: str = None) -> float:
+        if month:
+            month_clean = month.strip().capitalize()
+            row = df[df["Month"] == month_clean]
+            if not row.empty:
+                # Profit = Sales - Investment
+                return float(row["Sales"].values[0] - row["Investment"].values[0])
+            return 0.0
+        return float(df["Sales"].sum() - df["Investment"].sum())
+
+    # 2. Setup Agent Tools and Context
+    tools = [get_total_sales, get_total_investment, get_profit]
+    context_table = df.to_string(index=False)
+
+    system_instr = f"""
+    You are a finance agent. You have access to this specific data:
+    {context_table}
+    
+    INSTRUCTIONS:
+    1. For general analysis, refer to the table.
+    2. For any math/totals, you MUST use the provided tools.
+    3. Every response MUST be exactly 4 lines of text.
+    """
+
+    # 3. Call Gemini
+    config = types.GenerateContentConfig(
+        system_instruction=system_instr,
+        tools=tools,
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False)
     )
-)
 
-# 3. Dynamic system prompt (Corrected typo in 'system_prompt')
-@analysis_agent.system_prompt
-def add_data_to_prompt(ctx: RunContext[FinancialContext]) -> str:
-    return (
-        f"CONTEXT DATA:\n{ctx.deps.data_summary}\n\n"
-        f"APP LAYOUT:\n{ctx.deps.app_structure}"
+    response = client.models.generate_content(
+        model="gemini-2.0-flash-lite",
+        config=config,
+        contents=prompt
     )
+    
+    return response.text

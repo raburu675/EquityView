@@ -22,30 +22,48 @@ df["Profit"] = df["Sales"] - df["Investment"]
 
 
 
-# 🤖 AI SIDEBAR CHAT
+# 1. Create the context HERE so it's always defined
+csv_context = df.to_csv() 
+
+# --- 🤖 AI SIDEBAR CHAT ---
 with st.sidebar:
     st.header("🤖 Financial AI Assistant")
-    st.write("Ask questions about the data below!")
+    st.markdown("---")
+    
+    # User input
+    user_question = st.text_input("Ask a question about your data:", placeholder="e.g., What was the profit in May?")
 
-    user_question = st.text_input("Message the Analyst:")
+    if st.button("Analyze"):
+        if user_question:
+            with st.spinner("Talking to Backend..."):
+                try:
+                    # 1. Prepare data: Convert DataFrame to a list of dictionaries
+                    # We use reset_index() to make sure 'Month' is included if it was set as index
+                    table_data = df.reset_index().to_dict(orient="records")
 
-    if user_question:
-        #convert our dataframe to a string for the AI to read
-        csv_context = df.to_csv()
+                    # 2. Match the Backend 'Query' model (prompt and data)
+                    payload = {
+                        "prompt": user_question,
+                        "data": table_data
+                    }
 
-        #2. send to FastAPI
-        with st.spinner("Analyzing....."):
-            response = requests.post(
-                "http://localhost:8000/ask-analyst",
-                params={"question": user_question, "data_csv": csv_context}
-            )
+                    # 3. Send request to FastAPI
+                    response = requests.post("http://localhost:8000/ask", json=payload)
 
-            if response.status_code == 200:
-                st.info(response.json()["answer"])
-            else:
-                st.error("AI is offline. Ensure FastAPI is running.")
+                    if response.status_code == 200:
+                        answer = response.json().get("response")
+                        st.subheader("Analyst Response:")
+                        st.info(answer)
+                    else:
+                        st.error(f"Backend Error: {response.status_code}")
+                
+                except Exception as e:
+                    st.error(f"Connection Failed: {e}")
+        else:
+            st.warning("Please enter a question first!")
 
-
+    st.markdown("---")
+    st.caption("Powered by Gemini 2.0 & FastAPI")
 
 
 
@@ -54,7 +72,7 @@ df.set_index("Month", inplace=True)
 
 # Display the summary table now showing profit
 st.subheader("Monthly Financial Summary")
-st.dataframe(df, use_container_width=True)
+st.dataframe(df, width="stretch")
 
 # DATA VISUALIZATION SECTION
 st.divider() #adds a visual horizontal line
