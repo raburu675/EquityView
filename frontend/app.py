@@ -2,10 +2,27 @@ import streamlit as st
 import pandas as pd
 import requests
 
-# SET CONFIG PAGE
+# 1. INITIAL SETUP & SECRETS
 st.set_page_config(page_title="Company Analytics", layout="wide")
 
+# Fetch Backend URL from Streamlit Cloud Secrets (added previously)
+# Falls back to localhost for your local testing
+BACKEND_URL = st.secrets.get("BACKEND_URL", "http://localhost:8000")
+
+# 2. HELPER FUNCTION: Handle Render's "Sleep" mode
+def check_backend():
+    try:
+        # Pings the root of your FastAPI app on Render
+        response = requests.get(BACKEND_URL, timeout=3)
+        return response.status_code == 200
+    except:
+        return False
+
 st.title("12 Month business Analysis")
+
+# UI Warning for users if Render is still booting up
+if not check_backend():
+    st.warning("ℹ️ The AI backend is waking up... please wait about 30 seconds.")
 
 # create the Dictionary
 data = {
@@ -17,38 +34,30 @@ data = {
 # convert dictionary to a DataFrame
 df = pd.DataFrame(data)
 
-# 3. CALCULATE PROFIT (Sales - Investment)
+# 3. CALCULATE PROFIT
 df["Profit"] = df["Sales"] - df["Investment"]
-
-
-
-# 1. Create the context HERE so it's always defined
-csv_context = df.to_csv() 
 
 # --- 🤖 AI SIDEBAR CHAT ---
 with st.sidebar:
     st.header("🤖 Financial AI Assistant")
     st.markdown("---")
     
-    # User input
     user_question = st.text_input("Ask a question about your data:", placeholder="e.g., What was the profit in May?")
 
     if st.button("Analyze"):
         if user_question:
             with st.spinner("Talking to Backend..."):
                 try:
-                    # 1. Prepare data: Convert DataFrame to a list of dictionaries
-                    # We use reset_index() to make sure 'Month' is included if it was set as index
-                    table_data = df.reset_index().to_dict(orient="records")
+                    # Convert DataFrame to a format the AI can read
+                    table_data = df.to_dict(orient="records")
 
-                    # 2. Match the Backend 'Query' model (prompt and data)
                     payload = {
                         "prompt": user_question,
-                        "data": table_data
+                        "data": str(table_data) # Convert to string for the agent
                     }
 
-                    # 3. Send request to FastAPI
-                    response = requests.post("http://localhost:8000/ask", json=payload)
+                    # Call your Render URL /ask endpoint
+                    response = requests.post(f"{BACKEND_URL}/ask", json=payload)
 
                     if response.status_code == 200:
                         answer = response.json().get("response")
@@ -58,49 +67,41 @@ with st.sidebar:
                         st.error(f"Backend Error: {response.status_code}")
                 
                 except Exception as e:
-                    st.error(f"Connection Failed: {e}")
+                    st.error(f"Connection Failed: Ensure your Render backend is Live.")
         else:
             st.warning("Please enter a question first!")
 
     st.markdown("---")
     st.caption("Powered by Gemini 2.0 & FastAPI")
 
+# Prepare chart data
+chart_df = df.set_index("Month")
 
-
-# set the Month as the index so the charts use it as the X-axis automatically
-df.set_index("Month", inplace=True)
-
-# Display the summary table now showing profit
+# Display the summary table
 st.subheader("Monthly Financial Summary")
-st.dataframe(df, width="stretch")
+st.dataframe(df, width="stretch") # Kept your original 'stretch' setting
 
 # DATA VISUALIZATION SECTION
-st.divider() #adds a visual horizontal line
+st.divider()
 st.header("Financial Analysis Charts")
 
-# create columns for a side-by-side layout
 col1 , col2 = st.columns(2)
 
 with col1:
-    # chart 1: Bar chart for investment
     st.subheader("Monthly investment")
-    st.bar_chart(df["Investment"], color="#ff4b4b")
+    st.bar_chart(chart_df["Investment"], color="#ff4b4b")
 
 with col2:
-    #chart 2 line for sales trends
     st.subheader("Monthly sales")
-    st.line_chart(df["Sales"], color="#29b5e8")
+    st.line_chart(chart_df["Sales"], color="#29b5e8")
 
-# Chart 3: Area chart for Profit
 st.subheader("Profit Trajectory")
-st.area_chart(df["Profit"], color="#29e872")
-
+st.area_chart(chart_df["Profit"], color="#29e872")
 
 # SUMMARY METRICS
 st.divider()
 m_col1, m_col2, m_col3 = st.columns(3)
 
-# Calculate totals
 total_investment = df['Investment'].sum()
 total_sales = df['Sales'].sum()
 total_profit = df['Profit'].sum()
